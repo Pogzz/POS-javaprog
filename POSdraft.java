@@ -24,7 +24,7 @@ public class POSdraft extends JFrame {
 
     public POSdraft() {
         // Sample only
-        menu.add(new MenuItem("Adobo Rice", "Meals", 150.0));
+        menu.add(new MenuItem("Siomai Rice", "Meals", 150.0));
         menu.add(new MenuItem("Sinigang", "Meals", 180.0));
         menu.add(new MenuItem("Iced Latte", "Drinks", 120.0));
         menu.add(new MenuItem("Mango Shake", "Drinks", 90.0));
