@@ -495,7 +495,7 @@ public class RestaurantKiosk extends JFrame {
             detailsPanel.setPreferredSize(new Dimension(300, 0));
 
             subtotalLabel = new JLabel("Subtotal: ₱0.00");
-            pwdDiscountLabel = new JLabel("PWD/Senior Discount (20%): ₱0.00");
+            pwdDiscountLabel = new JLabel("PWD/Senior Discount (20% on highest item): ₱0.00");
             afterPwdLabel = new JLabel("After PWD Discount: ₱0.00");
             voucherLabel = new JLabel("Voucher Discount: ₱0.00");
             taxLabel = new JLabel("Tax (12%): ₱0.00");
@@ -608,7 +608,16 @@ public class RestaurantKiosk extends JFrame {
             }
 
             double subtotal = cart.stream().mapToDouble(CartItem::getSubtotal).sum();
-            double pwdDiscount = pwdApplied ? subtotal * 0.20 : 0;
+
+            double pwdDiscount = 0.0;
+            if (pwdApplied && !cart.isEmpty()) {
+                double maxSubtotal = cart.stream()
+                        .mapToDouble(CartItem::getSubtotal)
+                        .max()
+                        .orElse(0.0);
+                pwdDiscount = maxSubtotal * 0.20;
+            }
+
             double afterPwd = subtotal - pwdDiscount;
             double voucherDiscount = (appliedVoucher != null) ? appliedVoucher.discount : 0;
             double afterVoucher = afterPwd - voucherDiscount;
@@ -616,10 +625,10 @@ public class RestaurantKiosk extends JFrame {
             double total = afterVoucher + tax;
 
             subtotalLabel.setText("Subtotal: ₱" + String.format("%.2f", subtotal));
-            pwdDiscountLabel.setText("PWD/Senior Discount (20%): ₱" + String.format("%.2f", pwdDiscount));
+            pwdDiscountLabel.setText("PWD/Senior Discount: ₱" + String.format("%.2f", pwdDiscount));
             afterPwdLabel.setText("After PWD Discount: ₱" + String.format("%.2f", afterPwd));
             voucherLabel.setText("Voucher Discount: ₱" + String.format("%.2f", voucherDiscount));
-            taxLabel.setText("Tax (12%): ₱" + String.format("%.2f", tax));
+            taxLabel.setText("Tax: ₱" + String.format("%.2f", tax));
             totalLabel.setText("Total: ₱" + String.format("%.2f", total));
         }
 
@@ -648,7 +657,16 @@ public class RestaurantKiosk extends JFrame {
                 return;
             }
             double subtotal = cart.stream().mapToDouble(CartItem::getSubtotal).sum();
-            double pwdDiscount = pwdApplied ? subtotal * 0.20 : 0;
+
+            double pwdDiscount = 0.0;
+            if (pwdApplied && !cart.isEmpty()) {
+                double maxSubtotal = cart.stream()
+                        .mapToDouble(CartItem::getSubtotal)
+                        .max()
+                        .orElse(0.0);
+                pwdDiscount = maxSubtotal * 0.20;
+            }
+
             double afterPwd = subtotal - pwdDiscount;
             double voucherDiscount = (appliedVoucher != null) ? appliedVoucher.discount : 0;
             double afterVoucher = afterPwd - voucherDiscount;
@@ -656,17 +674,24 @@ public class RestaurantKiosk extends JFrame {
             double total = afterVoucher + tax;
 
             String[] options = {"Cash", "Card"};
-            int choice = JOptionPane.showOptionDialog(this, "Total Amount: ₱" + String.format("%.2f", total) + "\nSelect Payment Method",
+            int choice = JOptionPane.showOptionDialog(this,
+                    "Total Amount: ₱" + String.format("%.2f", total) + "\nSelect Payment Method",
                     "Payment", JOptionPane.YES_NO_OPTION, JOptionPane.INFORMATION_MESSAGE, null, options, options[0]);
 
             boolean success = false;
+            String paymentMethod = "";
+            double cashTendered = 0.0;
+            double change = 0.0;
+
             if (choice == 0) {
                 String input = JOptionPane.showInputDialog(this, "Enter Cash Amount:");
+                if (input == null) return;
                 try {
-                    double cash = Double.parseDouble(input);
-                    if (cash >= total) {
-                        double change = cash - total;
+                    cashTendered = Double.parseDouble(input);
+                    if (cashTendered >= total) {
+                        change = cashTendered - total;
                         JOptionPane.showMessageDialog(this, "Payment Successful!\nChange: ₱" + String.format("%.2f", change));
+                        paymentMethod = "Cash";
                         success = true;
                     } else {
                         JOptionPane.showMessageDialog(this, "Insufficient cash!");
@@ -676,12 +701,48 @@ public class RestaurantKiosk extends JFrame {
                 }
             } else if (choice == 1) {
                 JOptionPane.showMessageDialog(this, "Card Payment Processed Successfully!");
+                paymentMethod = "Card";
                 success = true;
             }
 
             if (success) {
+                StringBuilder receipt = new StringBuilder();
+                receipt.append("          RECEIPT\n");
+                receipt.append("------------------------------\n");
+                receipt.append("Order Type: ").append(orderType).append("\n");
+                receipt.append("Date: ").append(new java.util.Date()).append("\n\n");
+                receipt.append("Items:\n");
+                for (CartItem ci : cart) {
+                    receipt.append(String.format("  %-20s x%d  ₱%.2f\n",
+                            ci.item.name, ci.quantity, ci.getSubtotal()));
+                }
+                receipt.append("\n");
+                receipt.append(String.format("%-22s  %s\n", "Subtotal:", String.format("₱%.2f", subtotal)));
+                if (pwdApplied) {
+                    receipt.append(String.format("%-22s  %s\n", "PWD/Senior 20% off:", String.format("-₱%.2f", pwdDiscount)));
+                    receipt.append(String.format("%-22s  %s\n", "After PWD:", String.format("₱%.2f", afterPwd)));
+                }
+                if (appliedVoucher != null) {
+                    receipt.append(String.format("%-22s  %s\n", "Voucher (" + appliedVoucher.code + "):", String.format("-₱%.2f", voucherDiscount)));
+                }
+                receipt.append(String.format("%-22s  %s\n", "Tax (12%):", String.format("₱%.2f", tax)));
+                receipt.append(String.format("%-22s  %s\n", "TOTAL:", String.format("₱%.2f", total)));
+                receipt.append("\nPayment Method: ").append(paymentMethod);
+                if (paymentMethod.equals("Cash")) {
+                    receipt.append(String.format("\nCash Tendered: ₱%.2f", cashTendered));
+                    receipt.append(String.format("\nChange: ₱%.2f", change));
+                }
+                receipt.append("\n------------------------------\n");
+                receipt.append("   Thank you! Please come again.");
+
+                JTextArea textArea = new JTextArea(receipt.toString());
+                textArea.setEditable(false);
+                textArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
+                JScrollPane scrollPane = new JScrollPane(textArea);
+                scrollPane.setPreferredSize(new Dimension(350, 450));
+                JOptionPane.showMessageDialog(this, scrollPane, "Receipt", JOptionPane.INFORMATION_MESSAGE);
+
                 OrderDAO.saveOrder(orderType, total, cart);
-                JOptionPane.showMessageDialog(this, "Order Completed!\nThank you for dining with us.");
                 cart.clear();
                 resetDiscounts();
                 refreshDisplay();
