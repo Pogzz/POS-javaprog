@@ -1100,22 +1100,56 @@ public class RestaurantKiosk extends JFrame {
             addVoucher.setBackground(Color.LIGHT_GRAY);
             delVoucher.setBackground(Color.LIGHT_GRAY);
             addVoucher.addActionListener(e -> {
-                String code = JOptionPane.showInputDialog(this, "Code:");
-                if (code != null && !code.isEmpty()) {
-                    String discStr = JOptionPane.showInputDialog(this, "Discount Amount:");
-                    try {
-                        double disc = Double.parseDouble(discStr);
-                        VoucherDAO.addVoucher(code, disc);
-                        loadVoucherTable();
-                    } catch (NumberFormatException ex) { JOptionPane.showMessageDialog(this, "Invalid number"); }
+            	boolean exit = false;
+                while(!exit){
+                    JTextField codeTextField = new JTextField(10);
+                    JTextField discounTextField = new JTextField(10);
+
+
+                    JPanel panelz = new JPanel();
+
+
+                    panelz.add(new JLabel("Code:"));
+                    panelz.add(codeTextField);
+
+
+                    panelz.add(Box.createHorizontalStrut(10)); // spacing
+
+
+                    panelz.add(new JLabel("Discount:"));
+                    panelz.add(discounTextField);
+
+
+                    int result = JOptionPane.showConfirmDialog(this, panelz, "Voucher Addition", JOptionPane.OK_CANCEL_OPTION);
+                   
+                    if (result == JOptionPane.OK_OPTION) {
+                        String code = codeTextField.getText();
+                        String discount = discounTextField.getText();
+                        if (code != null && !code.isEmpty() && discount != null && !discount.isEmpty()) {
+                            try {
+                                double disc = Double.parseDouble(discount);
+                                VoucherDAO.addVoucher(code, disc);
+                                loadVoucherTable();
+                                exit = true;
+                            } catch (NumberFormatException ex) { JOptionPane.showMessageDialog(this, "Invalid number"); }
+                        }
+                        else if(!exit){
+                            JOptionPane.showMessageDialog(this, "Please input a code / discount");
+                        }
+                    }
+                    else
+                        exit = true;                
                 }
             });
             delVoucher.addActionListener(e -> {
-                int row = voucherTable.getSelectedRow();
-                if (row >= 0) {
-                    String code = (String) voucherTableModel.getValueAt(row, 0);
-                    VoucherDAO.deleteVoucher(code);
-                    loadVoucherTable();
+            	int choice = JOptionPane.showConfirmDialog(this, "Are you sure you want to delete this voucher?", "Voucher Deletion", JOptionPane.YES_NO_OPTION);
+                if(choice == JOptionPane.YES_OPTION){
+                    int row = voucherTable.getSelectedRow();
+                    if (row >= 0) {
+                        String code = (String) voucherTableModel.getValueAt(row, 0);
+                        VoucherDAO.deleteVoucher(code);
+                        loadVoucherTable();
+                    }
                 }
             });
             btnPanel.add(addVoucher);
