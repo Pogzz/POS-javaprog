@@ -3,12 +3,10 @@ import javax.swing.table.DefaultTableModel;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.TitledBorder;
 import java.awt.*;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
+import java.awt.image.BufferedImage;
 import java.sql.*;
 import java.util.*;
 import java.util.List;
-import java.util.stream.Collectors;
 
 class MenuItem {
     int id;
@@ -98,6 +96,23 @@ class MenuDAO {
             e.printStackTrace();
         }
         return cats;
+    }
+
+    public static List<MenuItem> getItemsByCategory(String category) {
+        List<MenuItem> items = new ArrayList<>();
+        String sql = "SELECT * FROM menu_items WHERE category = ? ORDER BY name";
+        try (Connection conn = DatabaseManager.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, category);
+            ResultSet rs = pstmt.executeQuery();
+            while (rs.next()) {
+                items.add(new MenuItem(rs.getInt("id"), rs.getString("name"),
+                        rs.getString("category"), rs.getDouble("price")));
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return items;
     }
 
     public static void addItem(String name, String category, double price) {
@@ -233,15 +248,21 @@ public class RestaurantKiosk extends JFrame {
     private CategoryPanel categoryPanel;
     private CartPanel cartPanel;
 
+    private static final String MAIN_FONT = "Segoe UI";
+
+    private static Map<Integer, BufferedImage> originalImageCache = new HashMap<>();
+
     public RestaurantKiosk() {
         setTitle("Restaurant Kiosk - Self Ordering System");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setSize(900, 700);
+        setSize(1000, 700);
         setLocationRelativeTo(null);
-        setMinimumSize(new Dimension(800, 600));
+        setMinimumSize(new Dimension(900, 600));
+        getContentPane().setBackground(Color.LIGHT_GRAY);
 
         cardLayout = new CardLayout();
         mainPanel = new JPanel(cardLayout);
+        mainPanel.setBackground(Color.LIGHT_GRAY);
 
         mainPanel.add(new WelcomePanel(), "welcome");
         categoryPanel = new CategoryPanel();
@@ -255,7 +276,7 @@ public class RestaurantKiosk extends JFrame {
 
     private JButton createStyledButton(String text, Color bg) {
         JButton btn = new JButton(text);
-        btn.setFont(new Font("Segoe UI", Font.BOLD, 18));
+        btn.setFont(new Font(MAIN_FONT, Font.BOLD, 18));
         btn.setBackground(bg);
         btn.setForeground(Color.BLACK);
         btn.setFocusPainted(false);
@@ -273,22 +294,99 @@ public class RestaurantKiosk extends JFrame {
         }
     }
 
+    private static BufferedImage loadOriginalImage(MenuItem item) {
+        if (originalImageCache.containsKey(item.id)) {
+            return originalImageCache.get(item.id);
+        }
+
+        BufferedImage img = null;
+        String basePath = "menu_images/";
+        String[] extensions = {".png", ".jpg", ".jpeg", ".gif"};
+
+        for (String ext : extensions) {
+            java.io.File file = new java.io.File(basePath + item.id + ext);
+            if (file.exists()) {
+                try {
+                    img = javax.imageio.ImageIO.read(file);
+                    if (img != null) break;
+                } catch (Exception ignored) {}
+            }
+        }
+
+        if (img == null) {
+            String nameFile = item.name.toLowerCase().replace(" ", "_");
+            for (String ext : extensions) {
+                java.io.File file = new java.io.File(basePath + nameFile + ext);
+                if (file.exists()) {
+                    try {
+                        img = javax.imageio.ImageIO.read(file);
+                        if (img != null) break;
+                    } catch (Exception ignored) {}
+                }
+            }
+        }
+
+        originalImageCache.put(item.id, img);
+        return img;
+    }
+
+    private static ImageIcon getScaledImageForMenuItem(MenuItem item, int width, int height) {
+        BufferedImage original = loadOriginalImage(item);
+        if (original == null) return null;
+        Image scaled = original.getScaledInstance(width, height, Image.SCALE_SMOOTH);
+        return new ImageIcon(scaled);
+    }
+
     class WelcomePanel extends JPanel {
         public WelcomePanel() {
-            setLayout(new GridBagLayout());
-            setBackground(new Color(207, 207, 207));
+            setLayout(new BorderLayout());
+            setBackground(Color.LIGHT_GRAY);
+            setBorder(new EmptyBorder(10, 10, 10, 10));
+
+            JPanel topRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+            topRow.setBackground(Color.LIGHT_GRAY);
+            JButton admin = new JButton("⚙");
+            try {
+                admin.setFont(new Font("Segoe UI Symbol", Font.BOLD, 28));
+            } catch (Exception e) {
+                admin.setFont(new Font("SansSerif", Font.BOLD, 28));
+            }
+            admin.setBackground(Color.LIGHT_GRAY);
+            admin.setFocusPainted(false);
+            admin.setCursor(new Cursor(Cursor.HAND_CURSOR));
+            admin.setToolTipText("Admin Panel");
+            Dimension btnSize = new Dimension(50, 50);
+            admin.setPreferredSize(btnSize);
+            topRow.add(admin);
+            add(topRow, BorderLayout.NORTH);
+
+            JPanel centerPanel = new JPanel(new GridBagLayout());
+            centerPanel.setBackground(Color.LIGHT_GRAY);
             GridBagConstraints gbc = new GridBagConstraints();
-            gbc.insets = new Insets(15, 15, 15, 15);
             gbc.gridwidth = GridBagConstraints.REMAINDER;
+            gbc.insets = new Insets(10, 10, 10, 10);
 
-            JLabel title = new JLabel("Welcome to our Restaurant Kiosk", SwingConstants.CENTER);
-            title.setFont(new Font("Segoe UI", Font.BOLD, 28));
-            title.setForeground(new Color(44, 43, 43));
-            add(title, gbc);
+            JLabel line1 = new JLabel("Welcome to Kaon & Kain", SwingConstants.CENTER);
+            line1.setFont(new Font(MAIN_FONT, Font.BOLD, 28));
+            line1.setForeground(new Color(44, 43, 43));
+            centerPanel.add(line1, gbc);
 
-            JButton dineIn = createStyledButton("Dine-In", new Color(207, 207, 207));
-            JButton takeOut = createStyledButton("Take-Out", new Color(207, 207, 207));
-            JButton admin = createStyledButton("Admin Panel", new Color(207, 207, 207));
+            JLabel line2 = new JLabel("a Filipino Cuisine", SwingConstants.CENTER);
+            line2.setFont(new Font(MAIN_FONT, Font.BOLD, 28));
+            line2.setForeground(new Color(44, 43, 43));
+            centerPanel.add(line2, gbc);
+
+            JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 30, 10));
+            buttonPanel.setBackground(Color.LIGHT_GRAY);
+            JButton dineIn = createStyledButton("Dine-In", Color.LIGHT_GRAY);
+            JButton takeOut = createStyledButton("Take-Out", Color.LIGHT_GRAY);
+            Dimension btnSizeLarge = new Dimension(200, 60);
+            dineIn.setPreferredSize(btnSizeLarge);
+            takeOut.setPreferredSize(btnSizeLarge);
+            buttonPanel.add(dineIn);
+            buttonPanel.add(takeOut);
+            centerPanel.add(buttonPanel, gbc);
+            add(centerPanel, BorderLayout.CENTER);
 
             dineIn.addActionListener(e -> {
                 orderType = "Dine-In";
@@ -305,14 +403,6 @@ public class RestaurantKiosk extends JFrame {
                     JOptionPane.showMessageDialog(this, "Invalid Admin Password!");
                 }
             });
-
-            add(dineIn, gbc);
-            add(takeOut, gbc);
-            add(admin, gbc);
-
-//            JLabel footer = new JLabel("Please select ordering type to continue");
-//            footer.setFont(new Font("Arial", Font.ITALIC, 12));
-//            add(footer, gbc);
         }
 
         private boolean authenticateAdmin() {
@@ -323,110 +413,193 @@ public class RestaurantKiosk extends JFrame {
 
     class CategoryPanel extends JPanel {
         private JButton viewCartButton;
+        private JList<String> categoryList;
+        private DefaultListModel<String> categoryListModel;
+        private JPanel menuTilePanel;
+        private MenuItem selectedMenuItem;
+        private JSpinner qtySpinner;
+        private JButton addToCartBtn;
 
         public CategoryPanel() {
             setLayout(new BorderLayout(10, 10));
             setBackground(Color.LIGHT_GRAY);
-            setBorder(new EmptyBorder(20, 20, 20, 20));
+            setBorder(new EmptyBorder(15, 15, 15, 15));
 
-            JLabel header = new JLabel("Select Category", SwingConstants.CENTER);
-            header.setFont(new Font("Segoe UI", Font.BOLD, 24));
+            JLabel header = new JLabel("Select Category & Add Items", SwingConstants.CENTER);
+            header.setFont(new Font(MAIN_FONT, Font.BOLD, 24));
             add(header, BorderLayout.NORTH);
 
-            JPanel catGrid = new JPanel(new GridLayout(0, 2, 15, 15));
-            catGrid.setBackground(Color.LIGHT_GRAY);
+            JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
+            splitPane.setDividerLocation(220);
+            splitPane.setResizeWeight(0.25);
+            splitPane.setBorder(null);
+
+            JPanel leftPanel = new JPanel(new BorderLayout());
+            leftPanel.setBackground(Color.LIGHT_GRAY);
+            leftPanel.setBorder(new TitledBorder("Categories"));
+            categoryListModel = new DefaultListModel<>();
+            categoryList = new JList<>(categoryListModel);
+            categoryList.setFont(new Font(MAIN_FONT, Font.PLAIN, 16));
+            categoryList.setBackground(Color.WHITE);
+            categoryList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+            loadCategories();
+
+            JScrollPane catScroll = new JScrollPane(categoryList);
+            catScroll.setBorder(new EmptyBorder(8, 8, 8, 8));
+            leftPanel.add(catScroll, BorderLayout.CENTER);
+            splitPane.setLeftComponent(leftPanel);
+
+            categoryList.addListSelectionListener(e -> {
+                if (!e.getValueIsAdjusting()) {
+                    String selectedCat = categoryList.getSelectedValue();
+                    if (selectedCat != null) {
+                        loadMenuItemsForCategory(selectedCat);
+                    }
+                }
+            });
+
+            JPanel rightPanel = new JPanel(new BorderLayout());
+            rightPanel.setBackground(Color.LIGHT_GRAY);
+            rightPanel.setBorder(new TitledBorder("Menu Items"));
+
+            menuTilePanel = new JPanel(new GridBagLayout());
+            menuTilePanel.setBackground(Color.WHITE);
+            menuTilePanel.setBorder(new EmptyBorder(10, 10, 10, 10));
+
+            JScrollPane tileScroll = new JScrollPane(menuTilePanel);
+            tileScroll.getViewport().setBackground(Color.WHITE);
+            tileScroll.setBorder(null);
+            tileScroll.getVerticalScrollBar().setUnitIncrement(16);
+
+            JPanel addControls = new JPanel(new FlowLayout(FlowLayout.CENTER, 15, 10));
+            addControls.setBackground(Color.LIGHT_GRAY);
+            JLabel qtyLabel = new JLabel("Quantity:");
+            qtyLabel.setFont(new Font(MAIN_FONT, Font.BOLD, 14));
+            addControls.add(qtyLabel);
+            qtySpinner = new JSpinner(new SpinnerNumberModel(1, 1, 20, 1));
+            qtySpinner.setPreferredSize(new Dimension(60, 30));
+            addControls.add(qtySpinner);
+            addToCartBtn = new JButton("Add to Cart");
+            addToCartBtn.setFont(new Font(MAIN_FONT, Font.BOLD, 14));
+            addToCartBtn.setBackground(Color.LIGHT_GRAY);
+            addToCartBtn.addActionListener(e -> addSelectedToCart());
+            addControls.add(addToCartBtn);
+
+            rightPanel.add(tileScroll, BorderLayout.CENTER);
+            rightPanel.add(addControls, BorderLayout.SOUTH);
+            splitPane.setRightComponent(rightPanel);
+            add(splitPane, BorderLayout.CENTER);
+
+            JPanel bottomPanel = new JPanel(new GridLayout(1, 2, 10, 10));
+            bottomPanel.setBackground(Color.LIGHT_GRAY);
+            viewCartButton = new JButton("View Cart (" + cart.size() + " items)");
+            viewCartButton.setFont(new Font(MAIN_FONT, Font.BOLD, 16));
+            viewCartButton.setBackground(Color.LIGHT_GRAY);
+            viewCartButton.addActionListener(e -> cardLayout.show(mainPanel, "cart"));
+            JButton backBtn = new JButton("Back to Welcome");
+            backBtn.setFont(new Font(MAIN_FONT, Font.BOLD, 16));
+            backBtn.setBackground(Color.LIGHT_GRAY);
+            backBtn.addActionListener(e -> cardLayout.show(mainPanel, "welcome"));
+            bottomPanel.add(viewCartButton);
+            bottomPanel.add(backBtn);
+            add(bottomPanel, BorderLayout.SOUTH);
+        }
+
+        private void loadCategories() {
+            categoryListModel.clear();
             List<String> categories = MenuDAO.getCategories();
             for (String cat : categories) {
-                JButton catBtn = new JButton(cat);
-                catBtn.setFont(new Font("Segoe UI", Font.BOLD, 20));
-                catBtn.setBackground(new Color(207, 207, 207));
-                catBtn.setForeground(Color.BLACK);
-                catBtn.addActionListener(e -> showMenuForCategory(cat));
-                catGrid.add(catBtn);
+                categoryListModel.addElement(cat);
+            }
+            if (categoryListModel.size() > 0) {
+                categoryList.setSelectedIndex(0);
+            }
+        }
+
+        private void loadMenuItemsForCategory(String category) {
+            menuTilePanel.removeAll();
+            selectedMenuItem = null;
+            List<MenuItem> items = MenuDAO.getItemsByCategory(category);
+
+            GridBagConstraints gbc = new GridBagConstraints();
+            gbc.insets = new Insets(10, 10, 10, 10);
+            gbc.anchor = GridBagConstraints.CENTER;
+            gbc.fill = GridBagConstraints.NONE;
+
+            int cols = 3;
+            for (int i = 0; i < items.size(); i++) {
+                JButton itemButton = createMenuItemButton(items.get(i));
+                gbc.gridx = i % cols;
+                gbc.gridy = i / cols;
+                menuTilePanel.add(itemButton, gbc);
             }
 
-            viewCartButton = new JButton("View Cart (" + cart.size() + " items)");
-            viewCartButton.setFont(new Font("Segoe UI", Font.BOLD, 16));
-            viewCartButton.setBackground(new Color(207, 207, 207));
-            viewCartButton.setForeground(Color.BLACK);
-            viewCartButton.addActionListener(e -> cardLayout.show(mainPanel, "cart"));
+            menuTilePanel.revalidate();
+            menuTilePanel.repaint();
+        }
 
-            JButton back = new JButton("Back to Welcome");
-            back.setFont(new Font("Segoe UI", Font.BOLD, 16));
-            back.setBackground(new Color(207, 207, 207));
-            back.setForeground(Color.BLACK);
-            back.addActionListener(e -> cardLayout.show(mainPanel, "welcome"));
+        private JButton createMenuItemButton(MenuItem item) {
+            JButton btn = new JButton();
+            btn.setLayout(new BorderLayout());
+            btn.setBackground(Color.WHITE);
+            btn.setFocusPainted(false);
+            btn.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
 
-            JPanel bottom = new JPanel(new GridLayout(1, 2, 10, 10));
-            bottom.add(viewCartButton);
-            bottom.add(back);
+            Dimension btnSize = new Dimension(140, 140);
+            btn.setPreferredSize(btnSize);
+            btn.setMinimumSize(btnSize);
+            btn.setMaximumSize(btnSize);
 
-            add(new JScrollPane(catGrid), BorderLayout.CENTER);
-            add(bottom, BorderLayout.SOUTH);
+            btn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+
+            ImageIcon icon = getScaledImageForMenuItem(item, 80, 80);
+            JLabel iconLabel = new JLabel(icon);
+            iconLabel.setHorizontalAlignment(SwingConstants.CENTER);
+            btn.add(iconLabel, BorderLayout.CENTER);
+
+            JPanel textPanel = new JPanel(new GridLayout(2, 1));
+            textPanel.setBackground(Color.WHITE);
+            JLabel nameLabel = new JLabel(item.name, SwingConstants.CENTER);
+            nameLabel.setFont(new Font(MAIN_FONT, Font.BOLD, 12));
+            JLabel priceLabel = new JLabel(String.format("₱%.2f", item.price), SwingConstants.CENTER);
+            priceLabel.setFont(new Font(MAIN_FONT, Font.PLAIN, 11));
+            textPanel.add(nameLabel);
+            textPanel.add(priceLabel);
+            btn.add(textPanel, BorderLayout.SOUTH);
+
+            btn.addActionListener(e -> {
+                selectedMenuItem = item;
+                resetMenuItemSelection();
+                btn.setBackground(new Color(220, 240, 255));
+                btn.setBorder(BorderFactory.createLineBorder(Color.BLUE, 2));
+            });
+
+            return btn;
+        }
+
+        private void resetMenuItemSelection() {
+            for (Component comp : menuTilePanel.getComponents()) {
+                if (comp instanceof JButton) {
+                    JButton btn = (JButton) comp;
+                    btn.setBackground(Color.WHITE);
+                    btn.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
+                }
+            }
+        }
+
+        private void addSelectedToCart() {
+            if (selectedMenuItem == null) {
+                JOptionPane.showMessageDialog(this, "Please select a menu item first.");
+                return;
+            }
+            int qty = (Integer) qtySpinner.getValue();
+            addToCart(selectedMenuItem, qty);
+            JOptionPane.showMessageDialog(this, qty + " x " + selectedMenuItem.name + " added to cart!");
+            refreshCategoryButton();
         }
 
         public void updateCartButton() {
             viewCartButton.setText("View Cart (" + cart.size() + " items)");
-        }
-
-        private void showMenuForCategory(String category) {
-            JFrame menuFrame = new JFrame(category + " Menu");
-            menuFrame.setSize(500, 550);
-            menuFrame.setLocationRelativeTo(RestaurantKiosk.this);
-            menuFrame.setLayout(new BorderLayout());
-
-            DefaultListModel<MenuItem> model = new DefaultListModel<>();
-            List<MenuItem> items = MenuDAO.getAllItems().stream()
-                    .filter(i -> i.category.equals(category))
-                    .collect(Collectors.toList());
-            items.forEach(model::addElement);
-
-            JList<MenuItem> list = new JList<>(model);
-            list.setCellRenderer(new DefaultListCellRenderer() {
-                @Override
-                public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
-                    JLabel label = (JLabel) super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
-                    MenuItem item = (MenuItem) value;
-                    label.setText(String.format("%s - ₱%.2f", item.name, item.price));
-                    label.setFont(new Font("Arial", Font.PLAIN, 16));
-                    return label;
-                }
-            });
-
-            JPanel controls = new JPanel();
-            JLabel quantityLabel = new JLabel("Quantity:");
-            quantityLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
-            controls.add(quantityLabel);
-
-            JSpinner qtySpinner = new JSpinner(new SpinnerNumberModel(1, 1, 20, 1));
-            controls.add(qtySpinner);
-
-            JButton addBtn = new JButton("Add to Cart");
-            addBtn.setFont(new Font("Segoe UI", Font.BOLD, 14));
-            addBtn.addActionListener(e -> {
-                MenuItem selected = list.getSelectedValue();
-                if (selected != null) {
-                    int qty = (Integer) qtySpinner.getValue();
-                    addToCart(selected, qty);
-                    JOptionPane.showMessageDialog(menuFrame, qty + " x " + selected.name + " added!");
-                    menuFrame.dispose();
-                    cardLayout.show(mainPanel, "categories");
-                    refreshCategoryButton();
-                } else {
-                    JOptionPane.showMessageDialog(menuFrame, "Please select an item");
-                }
-            });
-
-            JButton cancel = new JButton("Cancel");
-            cancel.setFont(new Font("Segoe UI", Font.BOLD, 14));
-            cancel.addActionListener(e -> menuFrame.dispose());
-
-            controls.add(addBtn);
-            controls.add(cancel);
-
-            menuFrame.add(new JScrollPane(list), BorderLayout.CENTER);
-            menuFrame.add(controls, BorderLayout.SOUTH);
-            menuFrame.setVisible(true);
         }
     }
 
@@ -438,68 +611,42 @@ public class RestaurantKiosk extends JFrame {
 
         public CartPanel() {
             setLayout(new BorderLayout(10, 10));
+            setBackground(Color.LIGHT_GRAY);
             setBorder(new EmptyBorder(15, 15, 15, 15));
 
             JLabel title = new JLabel("Your Order (" + orderType + ")", SwingConstants.CENTER);
-            title.setFont(new Font("Segoe UI", Font.BOLD, 22));
+            title.setFont(new Font(MAIN_FONT, Font.BOLD, 22));
             add(title, BorderLayout.NORTH);
 
             cartModel = new DefaultListModel<>();
             cartList = new JList<>(cartModel);
-            cartList.setFont(new Font("Monospaced", Font.PLAIN, 14));
-
-            cartList.addMouseListener(new MouseAdapter() {
-                @Override
-                public void mouseClicked(MouseEvent e) {
-                    if (e.getClickCount() == 2) {
-                        int idx = cartList.locationToIndex(e.getPoint());
-                        if (idx >= 0 && idx < cart.size()) {
-                            CartItem ci = cart.get(idx);
-                            String newQtyStr = JOptionPane.showInputDialog(CartPanel.this,
-                                    "Enter new quantity for " + ci.item.name + " (current: " + ci.quantity + "):",
-                                    ci.quantity);
-                            if (newQtyStr != null) {
-                                try {
-                                    int newQty = Integer.parseInt(newQtyStr);
-                                    if (newQty > 0 && newQty <= 20) {
-                                        ci.quantity = newQty;
-                                        refreshDisplay();
-                                        refreshCategoryButton();
-                                    } else if (newQty <= 0) {
-                                        cart.remove(idx);
-                                        refreshDisplay();
-                                        refreshCategoryButton();
-                                    } else {
-                                        JOptionPane.showMessageDialog(CartPanel.this,
-                                                "Quantity must be between 1 and 20.");
-                                    }
-                                } catch (NumberFormatException ex) {
-                                    JOptionPane.showMessageDialog(CartPanel.this,
-                                            "Invalid number.");
-                                }
-                            }
-                        }
-                    }
-                }
-            });
-
+            cartList.setFont(new Font(MAIN_FONT, Font.PLAIN, 14));
+            cartList.setBackground(Color.WHITE);
             add(new JScrollPane(cartList), BorderLayout.CENTER);
 
             JPanel detailsPanel = new JPanel();
             detailsPanel.setLayout(new BoxLayout(detailsPanel, BoxLayout.Y_AXIS));
-
+            detailsPanel.setBackground(Color.LIGHT_GRAY);
             TitledBorder orderBorder = new TitledBorder("Order Summary");
-            orderBorder.setTitleFont(new Font("Segoe UI", Font.BOLD, 14));
+            orderBorder.setTitleFont(new Font(MAIN_FONT, Font.BOLD, 14));
             orderBorder.setTitleJustification(TitledBorder.LEFT);
             detailsPanel.setBorder(orderBorder);
             detailsPanel.setPreferredSize(new Dimension(300, 0));
 
             subtotalLabel = new JLabel("Subtotal: ₱0.00");
-            pwdDiscountLabel = new JLabel("PWD/Senior Discount (20%): ₱0.00");
+            pwdDiscountLabel = new JLabel("PWD/Senior Discount (20% on highest item): ₱0.00");
             afterPwdLabel = new JLabel("After PWD Discount: ₱0.00");
             voucherLabel = new JLabel("Voucher Discount: ₱0.00");
             taxLabel = new JLabel("Tax (12%): ₱0.00");
             totalLabel = new JLabel("Total: ₱0.00");
+
+            Font labelFont = new Font(MAIN_FONT, Font.BOLD, 12);
+            subtotalLabel.setFont(labelFont);
+            pwdDiscountLabel.setFont(labelFont);
+            afterPwdLabel.setFont(labelFont);
+            voucherLabel.setFont(labelFont);
+            taxLabel.setFont(labelFont);
+            totalLabel.setFont(new Font(MAIN_FONT, Font.BOLD, 18));
 
             subtotalLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
             pwdDiscountLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -508,28 +655,21 @@ public class RestaurantKiosk extends JFrame {
             taxLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
             totalLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-            totalLabel.setHorizontalAlignment(SwingConstants.LEFT);
-            totalLabel.setFont(new Font("Segoe UI", Font.BOLD, 18));
-
-            Font labelFont = new Font("Segoe UI", Font.BOLD, 12);
-            subtotalLabel.setFont(labelFont);
-            pwdDiscountLabel.setFont(labelFont);
-            afterPwdLabel.setFont(labelFont);
-            voucherLabel.setFont(labelFont);
-            taxLabel.setFont(labelFont);
-
             applyPwdBtn = new JButton("Apply PWD / Senior Discount");
-            applyPwdBtn.setFont(new Font("Segoe UI", Font.BOLD, 12));
+            applyPwdBtn.setFont(new Font(MAIN_FONT, Font.BOLD, 12));
+            applyPwdBtn.setBackground(Color.LIGHT_GRAY);
             applyPwdBtn.setAlignmentX(Component.LEFT_ALIGNMENT);
             applyPwdBtn.addActionListener(e -> applyPwdDiscount());
 
             JPanel voucherPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+            voucherPanel.setBackground(Color.LIGHT_GRAY);
             voucherPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
             JLabel promoCodeLabel = new JLabel("Promo Code:");
-            promoCodeLabel.setFont(new Font("Segoe UI", Font.BOLD, 12));
+            promoCodeLabel.setFont(new Font(MAIN_FONT, Font.BOLD, 12));
             JTextField voucherField = new JTextField(10);
             JButton applyVoucherBtn = new JButton("Apply Voucher");
-            applyVoucherBtn.setFont(new Font("Segoe UI", Font.BOLD, 12));
+            applyVoucherBtn.setFont(new Font(MAIN_FONT, Font.BOLD, 12));
+            applyVoucherBtn.setBackground(Color.LIGHT_GRAY);
             applyVoucherBtn.addActionListener(e -> {
                 String code = voucherField.getText().trim();
                 Voucher v = VoucherDAO.getVoucher(code);
@@ -561,17 +701,55 @@ public class RestaurantKiosk extends JFrame {
             detailsPanel.add(applyPwdBtn);
             detailsPanel.add(voucherPanel);
 
-            JPanel buttonPanel = new JPanel(new GridLayout(1, 4, 10, 10));
+            JPanel buttonPanel = new JPanel(new GridLayout(1, 5, 10, 10));
+            buttonPanel.setBackground(Color.LIGHT_GRAY);
+            JButton editBtn = new JButton("Edit Selected");
             JButton removeBtn = new JButton("Remove Selected");
             JButton clearBtn = new JButton("Clear Cart");
             JButton checkoutBtn = new JButton("Proceed to Payment");
             JButton backBtn = new JButton("Back to Categories");
 
-            Font buttonFont = new Font("Segoe UI", Font.BOLD, 12);
+            Font buttonFont = new Font(MAIN_FONT, Font.BOLD, 12);
+            editBtn.setFont(buttonFont);
             removeBtn.setFont(buttonFont);
             clearBtn.setFont(buttonFont);
             checkoutBtn.setFont(buttonFont);
             backBtn.setFont(buttonFont);
+            editBtn.setBackground(Color.LIGHT_GRAY);
+            removeBtn.setBackground(Color.LIGHT_GRAY);
+            clearBtn.setBackground(Color.LIGHT_GRAY);
+            checkoutBtn.setBackground(Color.LIGHT_GRAY);
+            backBtn.setBackground(Color.LIGHT_GRAY);
+
+            editBtn.addActionListener(e -> {
+                int idx = cartList.getSelectedIndex();
+                if (idx >= 0 && idx < cart.size()) {
+                    CartItem ci = cart.get(idx);
+                    String newQtyStr = JOptionPane.showInputDialog(CartPanel.this,
+                            "Edit quantity for " + ci.item.name + " (current: " + ci.quantity + "):",
+                            ci.quantity);
+                    if (newQtyStr != null) {
+                        try {
+                            int newQty = Integer.parseInt(newQtyStr);
+                            if (newQty > 0 && newQty <= 20) {
+                                ci.quantity = newQty;
+                                refreshDisplay();
+                                refreshCategoryButton();
+                            } else if (newQty <= 0) {
+                                cart.remove(idx);
+                                refreshDisplay();
+                                refreshCategoryButton();
+                            } else {
+                                JOptionPane.showMessageDialog(CartPanel.this, "Quantity must be between 1 and 20.");
+                            }
+                        } catch (NumberFormatException ex) {
+                            JOptionPane.showMessageDialog(CartPanel.this, "Invalid number.");
+                        }
+                    }
+                } else {
+                    JOptionPane.showMessageDialog(CartPanel.this, "Please select an item to edit.");
+                }
+            });
 
             removeBtn.addActionListener(e -> {
                 int idx = cartList.getSelectedIndex();
@@ -582,15 +760,18 @@ public class RestaurantKiosk extends JFrame {
                     refreshCategoryButton();
                 }
             });
+
             clearBtn.addActionListener(e -> {
                 cart.clear();
                 resetDiscounts();
                 refreshDisplay();
                 refreshCategoryButton();
             });
+
             checkoutBtn.addActionListener(e -> processPayment());
             backBtn.addActionListener(e -> cardLayout.show(mainPanel, "categories"));
 
+            buttonPanel.add(editBtn);
             buttonPanel.add(removeBtn);
             buttonPanel.add(clearBtn);
             buttonPanel.add(checkoutBtn);
@@ -606,9 +787,12 @@ public class RestaurantKiosk extends JFrame {
             for (CartItem ci : cart) {
                 cartModel.addElement(ci.item.name + " x" + ci.quantity + " = ₱" + String.format("%.2f", ci.getSubtotal()));
             }
-
             double subtotal = cart.stream().mapToDouble(CartItem::getSubtotal).sum();
-            double pwdDiscount = pwdApplied ? subtotal * 0.20 : 0;
+            double pwdDiscount = 0.0;
+            if (pwdApplied && !cart.isEmpty()) {
+                double maxSubtotal = cart.stream().mapToDouble(CartItem::getSubtotal).max().orElse(0.0);
+                pwdDiscount = maxSubtotal * 0.20;
+            }
             double afterPwd = subtotal - pwdDiscount;
             double voucherDiscount = (appliedVoucher != null) ? appliedVoucher.discount : 0;
             double afterVoucher = afterPwd - voucherDiscount;
@@ -616,10 +800,10 @@ public class RestaurantKiosk extends JFrame {
             double total = afterVoucher + tax;
 
             subtotalLabel.setText("Subtotal: ₱" + String.format("%.2f", subtotal));
-            pwdDiscountLabel.setText("PWD/Senior Discount (20%): ₱" + String.format("%.2f", pwdDiscount));
+            pwdDiscountLabel.setText("PWD/Senior Discount: ₱" + String.format("%.2f", pwdDiscount));
             afterPwdLabel.setText("After PWD Discount: ₱" + String.format("%.2f", afterPwd));
             voucherLabel.setText("Voucher Discount: ₱" + String.format("%.2f", voucherDiscount));
-            taxLabel.setText("Tax (12%): ₱" + String.format("%.2f", tax));
+            taxLabel.setText("Tax: ₱" + String.format("%.2f", tax));
             totalLabel.setText("Total: ₱" + String.format("%.2f", total));
         }
 
@@ -648,7 +832,11 @@ public class RestaurantKiosk extends JFrame {
                 return;
             }
             double subtotal = cart.stream().mapToDouble(CartItem::getSubtotal).sum();
-            double pwdDiscount = pwdApplied ? subtotal * 0.20 : 0;
+            double pwdDiscount = 0.0;
+            if (pwdApplied && !cart.isEmpty()) {
+                double maxSubtotal = cart.stream().mapToDouble(CartItem::getSubtotal).max().orElse(0.0);
+                pwdDiscount = maxSubtotal * 0.20;
+            }
             double afterPwd = subtotal - pwdDiscount;
             double voucherDiscount = (appliedVoucher != null) ? appliedVoucher.discount : 0;
             double afterVoucher = afterPwd - voucherDiscount;
@@ -656,17 +844,24 @@ public class RestaurantKiosk extends JFrame {
             double total = afterVoucher + tax;
 
             String[] options = {"Cash", "Card"};
-            int choice = JOptionPane.showOptionDialog(this, "Total Amount: ₱" + String.format("%.2f", total) + "\nSelect Payment Method",
+            int choice = JOptionPane.showOptionDialog(this,
+                    "Total Amount: ₱" + String.format("%.2f", total) + "\nSelect Payment Method",
                     "Payment", JOptionPane.YES_NO_OPTION, JOptionPane.INFORMATION_MESSAGE, null, options, options[0]);
 
             boolean success = false;
+            String paymentMethod = "";
+            double cashTendered = 0.0;
+            double change = 0.0;
+
             if (choice == 0) {
                 String input = JOptionPane.showInputDialog(this, "Enter Cash Amount:");
+                if (input == null) return;
                 try {
-                    double cash = Double.parseDouble(input);
-                    if (cash >= total) {
-                        double change = cash - total;
+                    cashTendered = Double.parseDouble(input);
+                    if (cashTendered >= total) {
+                        change = cashTendered - total;
                         JOptionPane.showMessageDialog(this, "Payment Successful!\nChange: ₱" + String.format("%.2f", change));
+                        paymentMethod = "Cash";
                         success = true;
                     } else {
                         JOptionPane.showMessageDialog(this, "Insufficient cash!");
@@ -676,12 +871,47 @@ public class RestaurantKiosk extends JFrame {
                 }
             } else if (choice == 1) {
                 JOptionPane.showMessageDialog(this, "Card Payment Processed Successfully!");
+                paymentMethod = "Card";
                 success = true;
             }
 
             if (success) {
+                StringBuilder receipt = new StringBuilder();
+                receipt.append("                    RECEIPT\n");
+                receipt.append("-----------------------------------------------\n");
+                receipt.append("Order Type: ").append(orderType).append("\n");
+                receipt.append("Date: ").append(new java.util.Date()).append("\n\n");
+                receipt.append("Items:\n");
+                for (CartItem ci : cart) {
+                    receipt.append(String.format("  %-20s x%d  ₱%.2f\n", ci.item.name, ci.quantity, ci.getSubtotal()));
+                }
+                receipt.append("\n");
+                receipt.append(String.format("%-22s  %s\n", "Subtotal:", String.format("₱%.2f", subtotal)));
+                if (pwdApplied) {
+                    receipt.append(String.format("%-22s  %s\n", "PWD/Senior 20% off:", String.format("-₱%.2f", pwdDiscount)));
+                    receipt.append(String.format("%-22s  %s\n", "After PWD:", String.format("₱%.2f", afterPwd)));
+                }
+                if (appliedVoucher != null) {
+                    receipt.append(String.format("%-22s  %s\n", "Voucher (" + appliedVoucher.code + "):", String.format("-₱%.2f", voucherDiscount)));
+                }
+                receipt.append(String.format("%-22s  %s\n", "Tax (12%):", String.format("₱%.2f", tax)));
+                receipt.append(String.format("%-22s  %s\n", "TOTAL:", String.format("₱%.2f", total)));
+                receipt.append("\nPayment Method: ").append(paymentMethod);
+                if (paymentMethod.equals("Cash")) {
+                    receipt.append(String.format("\nCash Tendered: ₱%.2f", cashTendered));
+                    receipt.append(String.format("\nChange: ₱%.2f", change));
+                }
+                receipt.append("\n-----------------------------------------------\n");
+                receipt.append("          Thank you! Please come again.");
+
+                JTextArea textArea = new JTextArea(receipt.toString());
+                textArea.setEditable(false);
+                textArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
+                JScrollPane scrollPane = new JScrollPane(textArea);
+                scrollPane.setPreferredSize(new Dimension(350, 450));
+                JOptionPane.showMessageDialog(this, scrollPane, "Receipt", JOptionPane.INFORMATION_MESSAGE);
+
                 OrderDAO.saveOrder(orderType, total, cart);
-                JOptionPane.showMessageDialog(this, "Order Completed!\nThank you for dining with us.");
                 cart.clear();
                 resetDiscounts();
                 refreshDisplay();
@@ -701,6 +931,7 @@ public class RestaurantKiosk extends JFrame {
             setTitle("Admin Control Panel");
             setSize(900, 600);
             setLocationRelativeTo(RestaurantKiosk.this);
+            getContentPane().setBackground(Color.LIGHT_GRAY);
             JTabbedPane tabs = new JTabbedPane();
             tabs.addTab("Manage Menu", createMenuPanel());
             tabs.addTab("Manage Vouchers", createVoucherPanel());
@@ -709,24 +940,45 @@ public class RestaurantKiosk extends JFrame {
 
         private JPanel createMenuPanel() {
             JPanel panel = new JPanel(new BorderLayout(10, 10));
+            panel.setBackground(Color.LIGHT_GRAY);
             String[] cols = {"ID", "Name", "Category", "Price (₱)"};
             menuTableModel = new DefaultTableModel(cols, 0) {
                 @Override
                 public boolean isCellEditable(int row, int col) { return false; }
             };
             menuTable = new JTable(menuTableModel);
+            menuTable.setFont(new Font(MAIN_FONT, Font.PLAIN, 14));
             loadMenuTable();
 
             JPanel btnPanel = new JPanel(new FlowLayout());
+            btnPanel.setBackground(Color.LIGHT_GRAY);
             JButton addBtn = new JButton("Add Item");
             JButton editBtn = new JButton("Edit Item");
             JButton deleteBtn = new JButton("Delete Item");
             JButton refreshBtn = new JButton("Refresh");
 
+            Font btnFont = new Font(MAIN_FONT, Font.BOLD, 12);
+            addBtn.setFont(btnFont);
+            editBtn.setFont(btnFont);
+            deleteBtn.setFont(btnFont);
+            refreshBtn.setFont(btnFont);
+            addBtn.setBackground(Color.LIGHT_GRAY);
+            editBtn.setBackground(Color.LIGHT_GRAY);
+            deleteBtn.setBackground(Color.LIGHT_GRAY);
+            refreshBtn.setBackground(Color.LIGHT_GRAY);
+
             addBtn.addActionListener(e -> showAddMenuDialog());
             editBtn.addActionListener(e -> showEditMenuDialog());
             deleteBtn.addActionListener(e -> deleteMenuItem());
-            refreshBtn.addActionListener(e -> loadMenuTable());
+            refreshBtn.addActionListener(e -> {
+                loadMenuTable();
+                if (categoryPanel != null) {
+                    categoryPanel.loadCategories();
+                    String selectedCat = categoryPanel.categoryList.getSelectedValue();
+                    if (selectedCat != null) categoryPanel.loadMenuItemsForCategory(selectedCat);
+                }
+                originalImageCache.clear();
+            });
 
             btnPanel.add(addBtn);
             btnPanel.add(editBtn);
@@ -748,10 +1000,8 @@ public class RestaurantKiosk extends JFrame {
 
         private void showAddMenuDialog() {
             JTextField nameField = new JTextField();
-
             JComboBox<String> catCombo = new JComboBox<>(MenuDAO.getCategories().toArray(new String[0]));
             catCombo.setEditable(true);
-
             JTextField priceField = new JTextField();
             Object[] msg = {"Name:", nameField, "Category (or type new):", catCombo, "Price:", priceField};
             int opt = JOptionPane.showConfirmDialog(this, msg, "Add Menu Item", JOptionPane.OK_CANCEL_OPTION);
@@ -765,6 +1015,12 @@ public class RestaurantKiosk extends JFrame {
                     }
                     MenuDAO.addItem(nameField.getText(), category, price);
                     loadMenuTable();
+                    if (categoryPanel != null) {
+                        categoryPanel.loadCategories();
+                        String selectedCat = categoryPanel.categoryList.getSelectedValue();
+                        if (selectedCat != null) categoryPanel.loadMenuItemsForCategory(selectedCat);
+                    }
+                    originalImageCache.clear();
                 } catch (Exception ex) {
                     JOptionPane.showMessageDialog(this, "Invalid price");
                 }
@@ -780,11 +1036,9 @@ public class RestaurantKiosk extends JFrame {
             double oldPrice = (double) menuTableModel.getValueAt(row, 3);
 
             JTextField nameField = new JTextField(oldName);
-
             JComboBox<String> catCombo = new JComboBox<>(MenuDAO.getCategories().toArray(new String[0]));
             catCombo.setEditable(true);
             catCombo.setSelectedItem(oldCat);
-
             JTextField priceField = new JTextField(String.valueOf(oldPrice));
             Object[] msg = {"Name:", nameField, "Category (or type new):", catCombo, "Price:", priceField};
             int opt = JOptionPane.showConfirmDialog(this, msg, "Edit Item", JOptionPane.OK_CANCEL_OPTION);
@@ -798,6 +1052,12 @@ public class RestaurantKiosk extends JFrame {
                     }
                     MenuDAO.updateItem(id, nameField.getText(), category, price);
                     loadMenuTable();
+                    if (categoryPanel != null) {
+                        categoryPanel.loadCategories();
+                        String selectedCat = categoryPanel.categoryList.getSelectedValue();
+                        if (selectedCat != null) categoryPanel.loadMenuItemsForCategory(selectedCat);
+                    }
+                    originalImageCache.clear();
                 } catch (Exception ex) {
                     JOptionPane.showMessageDialog(this, "Invalid price");
                 }
@@ -812,19 +1072,33 @@ public class RestaurantKiosk extends JFrame {
             if (confirm == JOptionPane.YES_OPTION) {
                 MenuDAO.deleteItem(id);
                 loadMenuTable();
+                if (categoryPanel != null) {
+                    categoryPanel.loadCategories();
+                    String selectedCat = categoryPanel.categoryList.getSelectedValue();
+                    if (selectedCat != null) categoryPanel.loadMenuItemsForCategory(selectedCat);
+                }
+                originalImageCache.remove(id);
             }
         }
 
         private JPanel createVoucherPanel() {
             JPanel panel = new JPanel(new BorderLayout());
+            panel.setBackground(Color.LIGHT_GRAY);
             String[] cols = {"Voucher Code", "Discount (₱)"};
             voucherTableModel = new DefaultTableModel(cols, 0);
             voucherTable = new JTable(voucherTableModel);
+            voucherTable.setFont(new Font(MAIN_FONT, Font.PLAIN, 14));
             loadVoucherTable();
 
             JPanel btnPanel = new JPanel();
+            btnPanel.setBackground(Color.LIGHT_GRAY);
             JButton addVoucher = new JButton("Add Voucher");
             JButton delVoucher = new JButton("Delete Voucher");
+            Font btnFont = new Font(MAIN_FONT, Font.BOLD, 12);
+            addVoucher.setFont(btnFont);
+            delVoucher.setFont(btnFont);
+            addVoucher.setBackground(Color.LIGHT_GRAY);
+            delVoucher.setBackground(Color.LIGHT_GRAY);
             addVoucher.addActionListener(e -> {
                 String code = JOptionPane.showInputDialog(this, "Code:");
                 if (code != null && !code.isEmpty()) {
@@ -862,6 +1136,9 @@ public class RestaurantKiosk extends JFrame {
 
     private void loadCategoryScreen() {
         cardLayout.show(mainPanel, "categories");
+        if (categoryPanel != null) {
+            categoryPanel.loadCategories();
+        }
     }
 
     private void addToCart(MenuItem item, int quantity) {
