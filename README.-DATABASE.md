@@ -40,3 +40,14 @@ INSERT INTO menu_items (name, category, price) VALUES
 ('Brown Rice', 'Kanin', 140),
 ('Garlic Rice', 'Kanin', 115),
 ('Bagoong Rice', 'Kanin', 150);
+
+
+
+
+ALTER TABLE orders 
+ADD COLUMN notes TEXT,
+ADD COLUMN pwd_name VARCHAR(100),
+ADD COLUMN pwd_id VARCHAR(20),
+ADD COLUMN payment_method VARCHAR(20),
+ADD COLUMN cash_tendered DECIMAL(10,2),
+ADD COLUMN change_amount DECIMAL(10,2);
