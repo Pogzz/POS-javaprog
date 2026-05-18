@@ -235,6 +235,74 @@ class OrderDAO {
             e.printStackTrace();
         }
     }
+
+    public static double getTotalRevenueToday() {
+        String sql = "SELECT COALESCE(SUM(total), 0) AS revenue " +
+                    "FROM orders WHERE DATE(order_time) = CURDATE()";
+
+        try (Connection conn = DatabaseManager.getConnection();
+            Statement stmt = conn.createStatement();
+            ResultSet rs = stmt.executeQuery(sql)) {
+
+            if (rs.next()) {
+                return rs.getDouble("revenue");
+            }
+
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+
+        return 0;
+    }
+
+    public static int getTotalOrdersToday() {
+        String sql = "SELECT COUNT(*) AS total FROM orders " +
+                    "WHERE DATE(order_time) = CURDATE()";
+
+        try (Connection conn = DatabaseManager.getConnection();
+            Statement stmt = conn.createStatement();
+            ResultSet rs = stmt.executeQuery(sql)) {
+
+            if (rs.next()) {
+                return rs.getInt("total");
+            }
+
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+
+        return 0;
+    }
+
+    public static List<String> getRecentOrders() {
+
+        List<String> orders = new ArrayList<>();
+
+        String sql = 
+            "SELECT id, order_type, total, order_time " +
+            "FROM orders " +
+            "ORDER BY order_time DESC";
+
+        try (Connection conn = DatabaseManager.getConnection();
+            Statement stmt = conn.createStatement();
+            ResultSet rs = stmt.executeQuery(sql)) {
+
+            while (rs.next()) {
+
+                String text =
+                    "Order #" + String.format("%04d", rs.getInt("id")) +
+                    " | " + String.format("%-8s", rs.getString("order_type")) +
+                    " | ₱" + String.format("%.2f", rs.getDouble("total")) +
+                    " | " + new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(rs.getTimestamp("order_time"));;
+                orders.add(text);
+            }
+
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+
+        return orders;
+    }
 }
 
 public class RestaurantKiosk extends JFrame {
@@ -573,7 +641,6 @@ public class RestaurantKiosk extends JFrame {
                 btn.setBackground(new Color(220, 240, 255));
                 btn.setBorder(BorderFactory.createLineBorder(Color.BLUE, 2));
             });
-
             return btn;
         }
 
@@ -933,9 +1000,95 @@ public class RestaurantKiosk extends JFrame {
             setLocationRelativeTo(RestaurantKiosk.this);
             getContentPane().setBackground(Color.LIGHT_GRAY);
             JTabbedPane tabs = new JTabbedPane();
+            tabs.addTab("View Dashboard", createDashboardPanel());
             tabs.addTab("Manage Menu", createMenuPanel());
             tabs.addTab("Manage Vouchers", createVoucherPanel());
             add(tabs);
+        }
+
+        private JPanel createDashboardPanel() {
+
+            JPanel panel = new JPanel(new GridLayout(1, 2, 15, 15));
+            panel.setBackground(Color.LIGHT_GRAY);
+            panel.setBorder(new EmptyBorder(10, 10, 10, 10));
+
+            JPanel leftSide = new JPanel();
+            leftSide.setLayout(new GridLayout(10, 1, 0, 10));
+            leftSide.setBackground(Color.LIGHT_GRAY);
+
+            addAdminStatRow(
+                leftSide,
+                "Total Revenue Today",
+                "₱" + String.format("%.2f", OrderDAO.getTotalRevenueToday())
+            );
+
+            addAdminStatRow(
+                leftSide,
+                "Total Orders Today",
+                String.valueOf(OrderDAO.getTotalOrdersToday())
+            );
+
+            addAdminStatRow(
+                leftSide,
+                "Total Menu Categories",
+                String.valueOf(MenuDAO.getCategories().size())
+            );
+
+            addAdminStatRow(
+                leftSide,
+                "Total Menu Items",
+                String.valueOf(MenuDAO.getAllItems().size())
+            );
+
+            panel.add(leftSide);
+
+            JPanel rightSide = new JPanel(new BorderLayout());
+            rightSide.setBackground(Color.WHITE);
+            // rightSide.setBorder(null);
+            rightSide.setBorder(new TitledBorder("Recent Orders"));
+            
+            DefaultListModel<String> recentModel = new DefaultListModel<>();
+            
+            List<String> recentOrders = OrderDAO.getRecentOrders();
+
+            for (String order : recentOrders) {
+                recentModel.addElement(order);
+            }
+
+            JList<String> recentList = new JList<>(recentModel);
+            recentList.setSelectionModel(new DefaultListSelectionModel() {
+                @Override
+                public void setSelectionInterval(int index0, int index1) {}
+            });
+            recentList.setFont(new Font("Courier New", Font.PLAIN, 12));
+            recentList.setBorder(new EmptyBorder(2, 2, 2, 2));
+            recentList.setVisibleRowCount(5);
+
+            JScrollPane scrollPane = new JScrollPane(recentList);
+            scrollPane.setBorder(null);
+            scrollPane.setPreferredSize(new Dimension(400, 200));
+            rightSide.add(scrollPane, BorderLayout.CENTER);
+
+            panel.add(rightSide);
+
+            return panel;
+        }
+
+        private void addAdminStatRow(JPanel panel, String label, String value) {
+            JPanel row = new JPanel(new BorderLayout());
+            row.setBackground(Color.WHITE);
+            row.setBorder(new EmptyBorder(7, 12, 7, 12));
+            row.setPreferredSize(new Dimension(1000, 45));
+            
+            JLabel lbl = new JLabel(label);
+            lbl.setFont(new Font("Sanserif", Font.PLAIN, 15));
+
+            JLabel val = new JLabel(value);
+            val.setFont(new Font("SansSerif", Font.BOLD, 16));
+
+            row.add(lbl, BorderLayout.WEST);
+            row.add(val, BorderLayout.EAST);
+            panel.add(row);
         }
 
         private JPanel createMenuPanel() {
