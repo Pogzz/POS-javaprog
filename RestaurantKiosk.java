@@ -210,12 +210,20 @@ class VoucherDAO {
 }
 
 class OrderDAO {
-    public static void saveOrder(String orderType, double total, List<CartItem> cartItems) {
-        String orderSql = "INSERT INTO orders (order_type, total) VALUES (?, ?)";
+    public static int saveOrder(String orderType, double total, List<CartItem> cartItems,
+                                String notes, String pwdName, String pwdId,
+                                String paymentMethod, double cashTendered, double change) {
+        String orderSql = "INSERT INTO orders (order_type, total, notes, pwd_name, pwd_id, payment_method, cash_tendered, change_amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
         try (Connection conn = DatabaseManager.getConnection();
              PreparedStatement pstmt = conn.prepareStatement(orderSql, Statement.RETURN_GENERATED_KEYS)) {
             pstmt.setString(1, orderType);
             pstmt.setDouble(2, total);
+            pstmt.setString(3, notes);
+            pstmt.setString(4, pwdName);
+            pstmt.setString(5, pwdId);
+            pstmt.setString(6, paymentMethod);
+            pstmt.setDouble(7, cashTendered);
+            pstmt.setDouble(8, change);
             pstmt.executeUpdate();
             ResultSet rs = pstmt.getGeneratedKeys();
             if (rs.next()) {
@@ -230,10 +238,12 @@ class OrderDAO {
                         pstmt2.executeUpdate();
                     }
                 }
+                return orderId;
             }
         } catch (SQLException e) {
             e.printStackTrace();
         }
+        return -1;
     }
 }
 
@@ -244,6 +254,9 @@ public class RestaurantKiosk extends JFrame {
     private List<CartItem> cart = new ArrayList<>();
     private Voucher appliedVoucher = null;
     private boolean pwdApplied = false;
+    private String pwdName = "";
+    private String pwdId = "";
+    private String orderNote = "";
     private static final double TAX_RATE = 0.12;
     private CategoryPanel categoryPanel;
     private CartPanel cartPanel;
@@ -608,6 +621,8 @@ public class RestaurantKiosk extends JFrame {
         private JList<String> cartList;
         private JLabel subtotalLabel, pwdDiscountLabel, afterPwdLabel, voucherLabel, taxLabel, totalLabel;
         private JButton applyPwdBtn;
+        private JButton addNoteBtn;
+        private JLabel noteLabel;
 
         public CartPanel() {
             setLayout(new BorderLayout(10, 10));
@@ -661,6 +676,22 @@ public class RestaurantKiosk extends JFrame {
             applyPwdBtn.setAlignmentX(Component.LEFT_ALIGNMENT);
             applyPwdBtn.addActionListener(e -> applyPwdDiscount());
 
+            addNoteBtn = new JButton("Add Special Instructions");
+            addNoteBtn.setFont(new Font(MAIN_FONT, Font.BOLD, 12));
+            addNoteBtn.setBackground(Color.LIGHT_GRAY);
+            addNoteBtn.setAlignmentX(Component.LEFT_ALIGNMENT);
+            addNoteBtn.addActionListener(e -> {
+                String note = JOptionPane.showInputDialog(this, "Enter special instructions (e.g., no onions, extra sauce):", orderNote);
+                if (note != null) {
+                    orderNote = note;
+                    noteLabel.setText("Note: " + (orderNote.isEmpty() ? "None" : orderNote));
+                }
+            });
+
+            noteLabel = new JLabel("Note: None");
+            noteLabel.setFont(new Font(MAIN_FONT, Font.ITALIC, 12));
+            noteLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
             JPanel voucherPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
             voucherPanel.setBackground(Color.LIGHT_GRAY);
             voucherPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -699,6 +730,11 @@ public class RestaurantKiosk extends JFrame {
             detailsPanel.add(totalLabel);
             detailsPanel.add(Box.createVerticalStrut(10));
             detailsPanel.add(applyPwdBtn);
+            detailsPanel.add(Box.createVerticalStrut(5));
+            detailsPanel.add(addNoteBtn);
+            detailsPanel.add(Box.createVerticalStrut(5));
+            detailsPanel.add(noteLabel);
+            detailsPanel.add(Box.createVerticalStrut(5));
             detailsPanel.add(voucherPanel);
 
             JPanel buttonPanel = new JPanel(new GridLayout(1, 5, 10, 10));
@@ -796,19 +832,25 @@ public class RestaurantKiosk extends JFrame {
             double afterPwd = subtotal - pwdDiscount;
             double voucherDiscount = (appliedVoucher != null) ? appliedVoucher.discount : 0;
             double afterVoucher = afterPwd - voucherDiscount;
-            double tax = afterPwd * TAX_RATE;
+            double tax = (!pwdApplied) ? afterPwd * TAX_RATE : 0;
             double total = afterVoucher + tax;
 
             subtotalLabel.setText("Subtotal: ₱" + String.format("%.2f", subtotal));
             pwdDiscountLabel.setText("PWD/Senior Discount: ₱" + String.format("%.2f", pwdDiscount));
             afterPwdLabel.setText("After PWD Discount: ₱" + String.format("%.2f", afterPwd));
             voucherLabel.setText("Voucher Discount: ₱" + String.format("%.2f", voucherDiscount));
-            taxLabel.setText("Tax: ₱" + String.format("%.2f", tax));
+            if (pwdApplied) {
+                taxLabel.setText("Tax (PWD Exempt): ₱0.00");
+            } else {
+                taxLabel.setText("Tax (12%): ₱" + String.format("%.2f", tax));
+            }
             totalLabel.setText("Total: ₱" + String.format("%.2f", total));
         }
 
         private void resetDiscounts() {
             pwdApplied = false;
+            pwdName = "";
+            pwdId = "";
             appliedVoucher = null;
         }
 
@@ -819,11 +861,17 @@ public class RestaurantKiosk extends JFrame {
             }
             String name = JOptionPane.showInputDialog(this, "Enter PWD/Senior Name:");
             if (name == null || name.trim().isEmpty()) return;
-            String id = JOptionPane.showInputDialog(this, "Enter PWD/Senior ID Number:");
+            String id = JOptionPane.showInputDialog(this, "Enter 16-digit PWD/Senior ID Number:");
             if (id == null || id.trim().isEmpty()) return;
+            if (!id.matches("\\d{16}")) {
+                JOptionPane.showMessageDialog(this, "Invalid ID. Must be exactly 16 digits.");
+                return;
+            }
             pwdApplied = true;
+            pwdName = name.trim();
+            pwdId = id.trim();
             refreshDisplay();
-            JOptionPane.showMessageDialog(this, "20% PWD discount applied for " + name);
+            JOptionPane.showMessageDialog(this, "20% PWD discount applied for " + name + " (Tax exempt)");
         }
 
         private void processPayment() {
@@ -831,6 +879,7 @@ public class RestaurantKiosk extends JFrame {
                 JOptionPane.showMessageDialog(this, "Cart is empty!");
                 return;
             }
+
             double subtotal = cart.stream().mapToDouble(CartItem::getSubtotal).sum();
             double pwdDiscount = 0.0;
             if (pwdApplied && !cart.isEmpty()) {
@@ -840,13 +889,15 @@ public class RestaurantKiosk extends JFrame {
             double afterPwd = subtotal - pwdDiscount;
             double voucherDiscount = (appliedVoucher != null) ? appliedVoucher.discount : 0;
             double afterVoucher = afterPwd - voucherDiscount;
-            double tax = afterPwd * TAX_RATE;
+            double tax = (!pwdApplied) ? afterPwd * TAX_RATE : 0;
             double total = afterVoucher + tax;
 
             String[] options = {"Cash", "Card"};
             int choice = JOptionPane.showOptionDialog(this,
                     "Total Amount: ₱" + String.format("%.2f", total) + "\nSelect Payment Method",
                     "Payment", JOptionPane.YES_NO_OPTION, JOptionPane.INFORMATION_MESSAGE, null, options, options[0]);
+
+            if (choice == -1) return;
 
             boolean success = false;
             String paymentMethod = "";
@@ -869,55 +920,72 @@ public class RestaurantKiosk extends JFrame {
                 } catch (NumberFormatException ex) {
                     JOptionPane.showMessageDialog(this, "Invalid amount");
                 }
-            } else if (choice == 1) {
+            } else if (choice == 1) { 
                 JOptionPane.showMessageDialog(this, "Card Payment Processed Successfully!");
                 paymentMethod = "Card";
                 success = true;
             }
 
-            if (success) {
-                StringBuilder receipt = new StringBuilder();
-                receipt.append("                    RECEIPT\n");
-                receipt.append("-----------------------------------------------\n");
-                receipt.append("Order Type: ").append(orderType).append("\n");
-                receipt.append("Date: ").append(new java.util.Date()).append("\n\n");
-                receipt.append("Items:\n");
-                for (CartItem ci : cart) {
-                    receipt.append(String.format("  %-20s x%d  ₱%.2f\n", ci.item.name, ci.quantity, ci.getSubtotal()));
-                }
-                receipt.append("\n");
-                receipt.append(String.format("%-22s  %s\n", "Subtotal:", String.format("₱%.2f", subtotal)));
-                if (pwdApplied) {
-                    receipt.append(String.format("%-22s  %s\n", "PWD/Senior 20% off:", String.format("-₱%.2f", pwdDiscount)));
-                    receipt.append(String.format("%-22s  %s\n", "After PWD:", String.format("₱%.2f", afterPwd)));
-                }
-                if (appliedVoucher != null) {
-                    receipt.append(String.format("%-22s  %s\n", "Voucher (" + appliedVoucher.code + "):", String.format("-₱%.2f", voucherDiscount)));
-                }
-                receipt.append(String.format("%-22s  %s\n", "Tax (12%):", String.format("₱%.2f", tax)));
-                receipt.append(String.format("%-22s  %s\n", "TOTAL:", String.format("₱%.2f", total)));
-                receipt.append("\nPayment Method: ").append(paymentMethod);
-                if (paymentMethod.equals("Cash")) {
-                    receipt.append(String.format("\nCash Tendered: ₱%.2f", cashTendered));
-                    receipt.append(String.format("\nChange: ₱%.2f", change));
-                }
-                receipt.append("\n-----------------------------------------------\n");
-                receipt.append("          Thank you! Please come again.");
+            if (!success) return;
 
-                JTextArea textArea = new JTextArea(receipt.toString());
-                textArea.setEditable(false);
-                textArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
-                JScrollPane scrollPane = new JScrollPane(textArea);
-                scrollPane.setPreferredSize(new Dimension(350, 450));
-                JOptionPane.showMessageDialog(this, scrollPane, "Receipt", JOptionPane.INFORMATION_MESSAGE);
-
-                OrderDAO.saveOrder(orderType, total, cart);
-                cart.clear();
-                resetDiscounts();
-                refreshDisplay();
-                refreshCategoryButton();
-                cardLayout.show(mainPanel, "welcome");
+            int orderId = OrderDAO.saveOrder(orderType, total, cart, orderNote, pwdName, pwdId,
+                    paymentMethod, cashTendered, change);
+            if (orderId == -1) {
+                JOptionPane.showMessageDialog(this, "Error saving order. Please try again.");
+                return;
             }
+
+
+            StringBuilder receipt = new StringBuilder();
+            receipt.append("                    RECEIPT\n");
+            receipt.append("-----------------------------------------------\n");
+            receipt.append("Order #: ").append(orderId).append("\n");
+            receipt.append("Order Type: ").append(orderType).append("\n");
+            receipt.append("Date: ").append(new java.util.Date()).append("\n");
+            if (!orderNote.isEmpty()) {
+                receipt.append("Note: ").append(orderNote).append("\n");
+            }
+            receipt.append("\nItems:\n");
+            for (CartItem ci : cart) {
+                receipt.append(String.format("  %-20s x%d  ₱%.2f\n", ci.item.name, ci.quantity, ci.getSubtotal()));
+            }
+            receipt.append("\n");
+            receipt.append(String.format("%-22s  %s\n", "Subtotal:", String.format("₱%.2f", subtotal)));
+            if (pwdApplied) {
+                receipt.append(String.format("%-22s  %s\n", "PWD/Senior 20% off:", String.format("-₱%.2f", pwdDiscount)));
+                receipt.append(String.format("%-22s  %s\n", "PWD Name:", pwdName));
+                receipt.append(String.format("%-22s  %s\n", "PWD ID:", pwdId));
+                receipt.append("*** PWD ID must be presented for validation ***\n");
+                receipt.append(String.format("%-22s  %s\n", "After PWD:", String.format("₱%.2f", afterPwd)));
+                receipt.append(String.format("%-22s  %s\n", "Tax (exempt):", "₱0.00"));
+            } else {
+                receipt.append(String.format("%-22s  %s\n", "Tax (12%):", String.format("₱%.2f", tax)));
+            }
+            if (appliedVoucher != null) {
+                receipt.append(String.format("%-22s  %s\n", "Voucher (" + appliedVoucher.code + "):", String.format("-₱%.2f", voucherDiscount)));
+            }
+            receipt.append(String.format("%-22s  %s\n", "TOTAL:", String.format("₱%.2f", total)));
+            receipt.append("\nPayment Method: ").append(paymentMethod);
+            if (paymentMethod.equals("Cash")) {
+                receipt.append(String.format("\nCash Tendered: ₱%.2f", cashTendered));
+                receipt.append(String.format("\nChange: ₱%.2f", change));
+            }
+            receipt.append("\n-----------------------------------------------\n");
+            receipt.append("          Thank you! Please come again.");
+
+            JTextArea textArea = new JTextArea(receipt.toString());
+            textArea.setEditable(false);
+            textArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
+            JScrollPane scrollPane = new JScrollPane(textArea);
+            scrollPane.setPreferredSize(new Dimension(400, 500));
+            JOptionPane.showMessageDialog(this, scrollPane, "Receipt", JOptionPane.INFORMATION_MESSAGE);
+
+            cart.clear();
+            resetDiscounts();
+            orderNote = "";
+            refreshDisplay();
+            refreshCategoryButton();
+            cardLayout.show(mainPanel, "welcome");
         }
     }
 
@@ -1100,28 +1168,17 @@ public class RestaurantKiosk extends JFrame {
             addVoucher.setBackground(Color.LIGHT_GRAY);
             delVoucher.setBackground(Color.LIGHT_GRAY);
             addVoucher.addActionListener(e -> {
-            	boolean exit = false;
-                while(!exit){
+                boolean exit = false;
+                while (!exit) {
                     JTextField codeTextField = new JTextField(10);
                     JTextField discounTextField = new JTextField(10);
-
-
                     JPanel panelz = new JPanel();
-
-
                     panelz.add(new JLabel("Code:"));
                     panelz.add(codeTextField);
-
-
-                    panelz.add(Box.createHorizontalStrut(10)); // spacing
-
-
+                    panelz.add(Box.createHorizontalStrut(10));
                     panelz.add(new JLabel("Discount:"));
                     panelz.add(discounTextField);
-
-
                     int result = JOptionPane.showConfirmDialog(this, panelz, "Voucher Addition", JOptionPane.OK_CANCEL_OPTION);
-                   
                     if (result == JOptionPane.OK_OPTION) {
                         String code = codeTextField.getText();
                         String discount = discounTextField.getText();
@@ -1131,25 +1188,23 @@ public class RestaurantKiosk extends JFrame {
                                 VoucherDAO.addVoucher(code, disc);
                                 loadVoucherTable();
                                 exit = true;
-                            } catch (NumberFormatException ex) { JOptionPane.showMessageDialog(this, "Invalid number"); }
-                        }
-                        else if(!exit){
+                            } catch (NumberFormatException ex) {
+                                JOptionPane.showMessageDialog(this, "Invalid number");
+                            }
+                        } else {
                             JOptionPane.showMessageDialog(this, "Please input a code / discount");
                         }
+                    } else {
+                        exit = true;
                     }
-                    else
-                        exit = true;                
                 }
             });
             delVoucher.addActionListener(e -> {
-            	int choice = JOptionPane.showConfirmDialog(this, "Are you sure you want to delete this voucher?", "Voucher Deletion", JOptionPane.YES_NO_OPTION);
-                if(choice == JOptionPane.YES_OPTION){
-                    int row = voucherTable.getSelectedRow();
-                    if (row >= 0) {
-                        String code = (String) voucherTableModel.getValueAt(row, 0);
-                        VoucherDAO.deleteVoucher(code);
-                        loadVoucherTable();
-                    }
+                int row = voucherTable.getSelectedRow();
+                if (row >= 0) {
+                    String code = (String) voucherTableModel.getValueAt(row, 0);
+                    VoucherDAO.deleteVoucher(code);
+                    loadVoucherTable();
                 }
             });
             btnPanel.add(addVoucher);
