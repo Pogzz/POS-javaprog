@@ -311,6 +311,7 @@ public class RestaurantKiosk extends JFrame {
     private static final double TAX_RATE = 0.12;
     private CategoryPanel categoryPanel;
     private CartPanel cartPanel;
+    private String selectedCategory = "";
 
     private static final String MAIN_FONT = "Segoe UI";
 
@@ -568,6 +569,7 @@ public class RestaurantKiosk extends JFrame {
         private MenuItem selectedMenuItem;
         private JSpinner qtySpinner;
         private JButton addToCartBtn;
+        private JPanel sidebarButtonsPanel;
 
         public CategoryPanel() {
             setLayout(new BorderLayout());
@@ -1548,8 +1550,9 @@ public class RestaurantKiosk extends JFrame {
                 loadMenuTable();
                 if (categoryPanel != null) {
                     categoryPanel.loadCategories();
-                    String selectedCat = categoryPanel.categoryList.getSelectedValue();
-                    if (selectedCat != null) categoryPanel.loadMenuItemsForCategory(selectedCat);
+                    if (!selectedCategory.isEmpty()) {
+                        categoryPanel.loadMenuItemsForCategory(selectedCategory);
+                    }
                 }
                 originalImageCache.clear();
             });
@@ -1591,8 +1594,7 @@ public class RestaurantKiosk extends JFrame {
                     loadMenuTable();
                     if (categoryPanel != null) {
                         categoryPanel.loadCategories();
-                        String selectedCat = categoryPanel.categoryList.getSelectedValue();
-                        if (selectedCat != null) categoryPanel.loadMenuItemsForCategory(selectedCat);
+                        if (!selectedCategory.isEmpty()) categoryPanel.loadMenuItemsForCategory(selectedCategory);
                     }
                     originalImageCache.clear();
                 } catch (Exception ex) {
@@ -1628,8 +1630,9 @@ public class RestaurantKiosk extends JFrame {
                     loadMenuTable();
                     if (categoryPanel != null) {
                         categoryPanel.loadCategories();
-                        String selectedCat = categoryPanel.categoryList.getSelectedValue();
-                        if (selectedCat != null) categoryPanel.loadMenuItemsForCategory(selectedCat);
+                        if (!selectedCategory.isEmpty()) {
+                            categoryPanel.loadMenuItemsForCategory(selectedCategory);
+                        }
                     }
                     originalImageCache.clear();
                 } catch (Exception ex) {
@@ -1648,8 +1651,9 @@ public class RestaurantKiosk extends JFrame {
                 loadMenuTable();
                 if (categoryPanel != null) {
                     categoryPanel.loadCategories();
-                    String selectedCat = categoryPanel.categoryList.getSelectedValue();
-                    if (selectedCat != null) categoryPanel.loadMenuItemsForCategory(selectedCat);
+                    if (!selectedCategory.isEmpty()) {
+                        categoryPanel.loadMenuItemsForCategory(selectedCategory);
+                    }
                 }
                 originalImageCache.remove(id);
             }
