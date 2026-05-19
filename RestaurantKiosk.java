@@ -245,6 +245,55 @@ class OrderDAO {
         }
         return -1;
     }
+
+    public static double getTotalRevenueToday() {
+        String sql = "SELECT COALESCE(SUM(total), 0) AS revenue " +
+                "FROM orders WHERE DATE(timestamp) = CURDATE()";
+        try (Connection conn = DatabaseManager.getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            if (rs.next()) {
+                return rs.getDouble("revenue");
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return 0;
+    }
+
+    public static int getTotalOrdersToday() {
+        String sql = "SELECT COUNT(*) AS total FROM orders " +
+                "WHERE DATE(timestamp) = CURDATE()";
+        try (Connection conn = DatabaseManager.getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            if (rs.next()) {
+                return rs.getInt("total");
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return 0;
+    }
+
+    public static List<String> getRecentOrders() {
+        List<String> orders = new ArrayList<>();
+        String sql = "SELECT id, order_type, total, timestamp FROM orders ORDER BY timestamp DESC";
+        try (Connection conn = DatabaseManager.getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            while (rs.next()) {
+                String text = "Order #" + String.format("%04d", rs.getInt("id")) +
+                        " | " + String.format("%-8s", rs.getString("order_type")) +
+                        " | ₱" + String.format("%.2f", rs.getDouble("total")) +
+                        " | " + new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(rs.getTimestamp("timestamp"));
+                orders.add(text);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return orders;
+    }
 }
 
 public class RestaurantKiosk extends JFrame {
@@ -303,6 +352,7 @@ public class RestaurantKiosk extends JFrame {
             categoryPanel.updateCartButton();
         }
         if (cartPanel != null) {
+            cartPanel.updateOrderType(orderType);
             cartPanel.refreshDisplay();
         }
     }
@@ -403,10 +453,12 @@ public class RestaurantKiosk extends JFrame {
 
             dineIn.addActionListener(e -> {
                 orderType = "Dine-In";
+                cartPanel.updateOrderType(orderType);
                 loadCategoryScreen();
             });
             takeOut.addActionListener(e -> {
                 orderType = "Take-Out";
+                cartPanel.updateOrderType(orderType);
                 loadCategoryScreen();
             });
             admin.addActionListener(e -> {
@@ -623,15 +675,17 @@ public class RestaurantKiosk extends JFrame {
         private JButton applyPwdBtn;
         private JButton addNoteBtn;
         private JLabel noteLabel;
+        private JTextField voucherField;
+        private JLabel titleLabel;
 
         public CartPanel() {
             setLayout(new BorderLayout(10, 10));
             setBackground(Color.LIGHT_GRAY);
             setBorder(new EmptyBorder(15, 15, 15, 15));
 
-            JLabel title = new JLabel("Your Order (" + orderType + ")", SwingConstants.CENTER);
-            title.setFont(new Font(MAIN_FONT, Font.BOLD, 22));
-            add(title, BorderLayout.NORTH);
+            titleLabel = new JLabel("Your Order (" + orderType + ")", SwingConstants.CENTER);
+            titleLabel.setFont(new Font(MAIN_FONT, Font.BOLD, 22));
+            add(titleLabel, BorderLayout.NORTH);
 
             cartModel = new DefaultListModel<>();
             cartList = new JList<>(cartModel);
@@ -697,25 +751,51 @@ public class RestaurantKiosk extends JFrame {
             voucherPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
             JLabel promoCodeLabel = new JLabel("Promo Code:");
             promoCodeLabel.setFont(new Font(MAIN_FONT, Font.BOLD, 12));
-            JTextField voucherField = new JTextField(10);
+            voucherField = new JTextField(10);
             JButton applyVoucherBtn = new JButton("Apply Voucher");
+            JButton clearVoucherBtn = new JButton("Clear Voucher");
             applyVoucherBtn.setFont(new Font(MAIN_FONT, Font.BOLD, 12));
+            clearVoucherBtn.setFont(new Font(MAIN_FONT, Font.BOLD, 12));
             applyVoucherBtn.setBackground(Color.LIGHT_GRAY);
+            clearVoucherBtn.setBackground(Color.LIGHT_GRAY);
+
             applyVoucherBtn.addActionListener(e -> {
                 String code = voucherField.getText().trim();
-                Voucher v = VoucherDAO.getVoucher(code);
-                if (v != null) {
-                    appliedVoucher = v;
-                    refreshDisplay();
-                    JOptionPane.showMessageDialog(this, "Voucher Applied: " + v.code + " - ₱" + v.discount + " off");
-                } else {
-                    JOptionPane.showMessageDialog(this, "Invalid Voucher Code");
+                if (code.isEmpty()) {
+                    JOptionPane.showMessageDialog(this, "Please enter a voucher code.");
+                    return;
                 }
+                Voucher v = VoucherDAO.getVoucher(code);
+                if (v == null) {
+                    JOptionPane.showMessageDialog(this, "Invalid Voucher Code");
+                    return;
+                }
+                double afterPwd = computeAfterPwdAmount();
+                if (v.discount > afterPwd) {
+                    JOptionPane.showMessageDialog(this,
+                            "Voucher discount (₱" + String.format("%.2f", v.discount) +
+                                    ") exceeds current total after discounts (₱" + String.format("%.2f", afterPwd) +
+                                    "). Cannot apply.", "Invalid Voucher", JOptionPane.ERROR_MESSAGE);
+                    return;
+                }
+                appliedVoucher = v;
+                refreshDisplay();
+                JOptionPane.showMessageDialog(this, "Voucher Applied: " + v.code + " - ₱" + v.discount + " off");
                 voucherField.setText("");
             });
+
+            clearVoucherBtn.addActionListener(e -> {
+                if (appliedVoucher != null) {
+                    appliedVoucher = null;
+                    refreshDisplay();
+                    JOptionPane.showMessageDialog(this, "Voucher removed.");
+                }
+            });
+
             voucherPanel.add(promoCodeLabel);
             voucherPanel.add(voucherField);
             voucherPanel.add(applyVoucherBtn);
+            voucherPanel.add(clearVoucherBtn);
 
             detailsPanel.add(subtotalLabel);
             detailsPanel.add(Box.createVerticalStrut(5));
@@ -730,6 +810,24 @@ public class RestaurantKiosk extends JFrame {
             detailsPanel.add(totalLabel);
             detailsPanel.add(Box.createVerticalStrut(10));
             detailsPanel.add(applyPwdBtn);
+            detailsPanel.add(Box.createVerticalStrut(5));
+
+            JButton clearPwdBtn = new JButton("Clear PWD");
+            clearPwdBtn.setFont(new Font(MAIN_FONT, Font.BOLD, 12));
+            clearPwdBtn.setBackground(Color.LIGHT_GRAY);
+            clearPwdBtn.setAlignmentX(Component.LEFT_ALIGNMENT);
+            clearPwdBtn.addActionListener(e -> {
+                if (pwdApplied) {
+                    pwdApplied = false;
+                    pwdName = "";
+                    pwdId = "";
+                    refreshDisplay();
+                    JOptionPane.showMessageDialog(this, "PWD discount removed.");
+                } else {
+                    JOptionPane.showMessageDialog(this, "No PWD discount applied.");
+                }
+            });
+            detailsPanel.add(clearPwdBtn);
             detailsPanel.add(Box.createVerticalStrut(5));
             detailsPanel.add(addNoteBtn);
             detailsPanel.add(Box.createVerticalStrut(5));
@@ -818,6 +916,20 @@ public class RestaurantKiosk extends JFrame {
             refreshDisplay();
         }
 
+        public void updateOrderType(String newOrderType) {
+            titleLabel.setText("Your Order (" + newOrderType + ")");
+        }
+
+        private double computeAfterPwdAmount() {
+            double subtotal = cart.stream().mapToDouble(CartItem::getSubtotal).sum();
+            double pwdDiscount = 0.0;
+            if (pwdApplied && !cart.isEmpty()) {
+                double maxSubtotal = cart.stream().mapToDouble(CartItem::getSubtotal).max().orElse(0.0);
+                pwdDiscount = maxSubtotal * 0.20;
+            }
+            return subtotal - pwdDiscount;
+        }
+
         public void refreshDisplay() {
             cartModel.clear();
             for (CartItem ci : cart) {
@@ -830,6 +942,14 @@ public class RestaurantKiosk extends JFrame {
                 pwdDiscount = maxSubtotal * 0.20;
             }
             double afterPwd = subtotal - pwdDiscount;
+
+            if (appliedVoucher != null && appliedVoucher.discount > afterPwd) {
+                appliedVoucher = null;
+                JOptionPane.showMessageDialog(this,
+                        "Applied voucher discount exceeds current total and has been removed.",
+                        "Voucher Invalid", JOptionPane.WARNING_MESSAGE);
+            }
+
             double voucherDiscount = (appliedVoucher != null) ? appliedVoucher.discount : 0;
             double afterVoucher = afterPwd - voucherDiscount;
             double tax = (!pwdApplied) ? afterPwd * TAX_RATE : 0;
@@ -920,7 +1040,7 @@ public class RestaurantKiosk extends JFrame {
                 } catch (NumberFormatException ex) {
                     JOptionPane.showMessageDialog(this, "Invalid amount");
                 }
-            } else if (choice == 1) { 
+            } else if (choice == 1) {
                 JOptionPane.showMessageDialog(this, "Card Payment Processed Successfully!");
                 paymentMethod = "Card";
                 success = true;
@@ -934,7 +1054,6 @@ public class RestaurantKiosk extends JFrame {
                 JOptionPane.showMessageDialog(this, "Error saving order. Please try again.");
                 return;
             }
-
 
             StringBuilder receipt = new StringBuilder();
             receipt.append("                    RECEIPT\n");
@@ -1001,9 +1120,83 @@ public class RestaurantKiosk extends JFrame {
             setLocationRelativeTo(RestaurantKiosk.this);
             getContentPane().setBackground(Color.LIGHT_GRAY);
             JTabbedPane tabs = new JTabbedPane();
+            tabs.addTab("View Dashboard", createDashboardPanel());
             tabs.addTab("Manage Menu", createMenuPanel());
             tabs.addTab("Manage Vouchers", createVoucherPanel());
             add(tabs);
+        }
+
+        private JPanel createDashboardPanel() {
+            JPanel panel = new JPanel(new GridLayout(1, 2, 15, 15));
+            panel.setBackground(Color.LIGHT_GRAY);
+            panel.setBorder(new EmptyBorder(10, 10, 10, 10));
+
+            JPanel leftSide = new JPanel();
+            leftSide.setLayout(new GridLayout(10, 1, 0, 10));
+            leftSide.setBackground(Color.LIGHT_GRAY);
+
+            addAdminStatRow(leftSide,
+                    "Total Revenue Today",
+                    "₱" + String.format("%.2f", OrderDAO.getTotalRevenueToday())
+            );
+            addAdminStatRow(leftSide,
+                    "Total Orders Today",
+                    String.valueOf(OrderDAO.getTotalOrdersToday())
+            );
+            addAdminStatRow(leftSide,
+                    "Total Menu Categories",
+                    String.valueOf(MenuDAO.getCategories().size())
+            );
+            addAdminStatRow(leftSide,
+                    "Total Menu Items",
+                    String.valueOf(MenuDAO.getAllItems().size())
+            );
+
+            panel.add(leftSide);
+
+            JPanel rightSide = new JPanel(new BorderLayout());
+            rightSide.setBackground(Color.WHITE);
+            rightSide.setBorder(new TitledBorder("Recent Orders"));
+
+            DefaultListModel<String> recentModel = new DefaultListModel<>();
+            List<String> recentOrders = OrderDAO.getRecentOrders();
+            for (String order : recentOrders) {
+                recentModel.addElement(order);
+            }
+
+            JList<String> recentList = new JList<>(recentModel);
+            recentList.setSelectionModel(new DefaultListSelectionModel() {
+                @Override
+                public void setSelectionInterval(int index0, int index1) {}
+            });
+            recentList.setFont(new Font("Courier New", Font.PLAIN, 12));
+            recentList.setBorder(new EmptyBorder(2, 2, 2, 2));
+            recentList.setVisibleRowCount(5);
+
+            JScrollPane scrollPane = new JScrollPane(recentList);
+            scrollPane.setBorder(null);
+            scrollPane.setPreferredSize(new Dimension(400, 200));
+            rightSide.add(scrollPane, BorderLayout.CENTER);
+
+            panel.add(rightSide);
+            return panel;
+        }
+
+        private void addAdminStatRow(JPanel panel, String label, String value) {
+            JPanel row = new JPanel(new BorderLayout());
+            row.setBackground(Color.WHITE);
+            row.setBorder(new EmptyBorder(7, 12, 7, 12));
+            row.setPreferredSize(new Dimension(1000, 45));
+
+            JLabel lbl = new JLabel(label);
+            lbl.setFont(new Font("SansSerif", Font.PLAIN, 15));
+
+            JLabel val = new JLabel(value);
+            val.setFont(new Font("SansSerif", Font.BOLD, 16));
+
+            row.add(lbl, BorderLayout.WEST);
+            row.add(val, BorderLayout.EAST);
+            panel.add(row);
         }
 
         private JPanel createMenuPanel() {
