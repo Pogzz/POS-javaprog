@@ -1044,7 +1044,6 @@ public class RestaurantKiosk extends JFrame {
 
             JPanel rightSide = new JPanel(new BorderLayout());
             rightSide.setBackground(Color.WHITE);
-            // rightSide.setBorder(null);
             rightSide.setBorder(new TitledBorder("Recent Orders"));
             
             DefaultListModel<String> recentModel = new DefaultListModel<>();
